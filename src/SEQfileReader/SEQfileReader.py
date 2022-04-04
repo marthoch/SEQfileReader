@@ -47,7 +47,6 @@ SEQfile(filename=r'testRecording.seq')
         preset number: ...... 1
         date/time of frame:   2000-00-00T00:00:00.000000
 
-
     """
 
     frameRate_nominal_available = 200. / 2 ** np.arange(0, 5)
@@ -88,6 +87,14 @@ SEQfile(filename=r'testRecording.seq')
     def current_frame_time(self):
         return self.im.frame_info.time
 
+    @property
+    def emissivity(self):
+        return self.im.reduce_objects.get_object_parameters().emissivity
+
+    @property
+    def atmospheric_transmission(self):
+        return self.im.reduce_objects.get_object_parameters().atmospheric_transmission
+
     def go2next_frame(self, step=1):
         try:
             self.go2frame(self.current_frame_number + step)
@@ -117,6 +124,8 @@ SEQfile(filename=r'testRecording.seq')
         frame number: ....... {s.current_frame_number}
         preset number: ...... {s.im.num_presets}
         date/time of frame:   {frame_info_time}
+        emissivity:           {s.emissivity}
+        atmospheric_transmission: {s.atmospheric_transmission}
         """.format(s=self,
                    frame_info_time=self.im.frame_info.time.isoformat(),
                    recStartTime=self._firstFrame_time.isoformat(),
