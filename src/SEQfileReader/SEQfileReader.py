@@ -3,6 +3,7 @@ __author__ = 'Martin Hochwallner <marthoch@users.noreply.github.com>'
 __email__ = "marthoch@users.noreply.github.com"
 __license__ = "BSD 3-clause"
 
+import os
 import numpy as np
 import datetime
 import pandas as pd
@@ -53,8 +54,8 @@ SEQfile(filename=r'testRecording.seq')
 
     def __init__(self, filename):
         log.debug('opening "%s"', filename)
-        self.filename = filename
-        self.im = fnv.file.ImagerFile(self.filename)
+        self._filename = filename
+        self.im = fnv.file.ImagerFile(self._filename)
         self.im.unit = fnv.Unit.TEMPERATURE_FACTORY
         self.im.temp_type = fnv.TempType.KELVIN
         self.im.get_frame(0)
@@ -74,10 +75,28 @@ SEQfile(filename=r'testRecording.seq')
         self.timeArray = None
 
     @property
+    def filename_full(self):
+        return self._filename
+
+    @property
+    def filename(self):
+        return os.path.basename(self._filename)
+
+    @property
+    def filename_woext(self):
+        """Filename without extension
+        """
+        return self.filename.rsplit('.', 1)[0]
+
+    @property
     def number_of_frames(self):
         """ Number of Frames in the SEQ file
         """
         return self.im.num_frames
+
+    @property
+    def first_frame_time(self):
+        return self._firstFrame_time
 
     @property
     def current_frame_number(self):
@@ -102,6 +121,13 @@ SEQfile(filename=r'testRecording.seq')
             raise StopIteration
 
     def go2frame(self, frame_number):
+        """
+        :param frame_number: uses python notation, 0 is first, -1 last
+        :return: nothing
+
+        """
+        if frame_number < 0:
+            frame_number = self.number_of_frames + frame_number
         if 0 > frame_number or frame_number >= self.im.num_frames:
             raise IndexError('Out of range: {} not it [0..{}]'.format(frame_number, self.im.num_frames - 1))
         else:  # return value of get_frame is not reliable
@@ -124,7 +150,7 @@ SEQfile(filename=r'testRecording.seq')
         frame number: ....... {s.current_frame_number}
         preset number: ...... {s.im.num_presets}
         date/time of frame:   {frame_info_time}
-        emissivity:           {s.emissivity}
+        emissivity:               {s.emissivity}
         atmospheric_transmission: {s.atmospheric_transmission}
         """.format(s=self,
                    frame_info_time=self.im.frame_info.time.isoformat(),
@@ -195,11 +221,24 @@ SEQfile(filename=r'testRecording.seq')
             self.timeArray = pd.DataFrame({'time': t})
         return t, v, fi
 
-    def read_line(self, line=None, hline=None, vline=None, interpolation='linear'):
+    def read_line(self, line=None, hline=None, vline=None, interpolation='linear', plot_show_line=False):
         """
         line = dict(p0=dict(v=1, h=1), p1=dict(v=10, h=50), len=None)
         interpolation='linear' or 'nearest'
+        :param plot_show_line: if True plot the image and show the line
         """
+
+        if plot_show_line:
+            fig, ax = plt.subplots(1, 1)
+            ax.imshow(self.get_image() - 273.15, interpolation='nearest', cmap='plasma')
+            ax.plot([line['p0']['h'], ], [line['p0']['v'], ], color='lime', lw=2, alpha=0.5, marker='o',
+                    markersize=20)
+            ax.plot([line['p1']['h'], ], [line['p1']['v'], ], color='deepskyblue', lw=2, alpha=0.5,
+                    marker='s', markersize=20)
+            ax.plot([line['p0']['h'], line['p1']['h']], [line['p0']['v'], line['p1']['v']],
+                    color='lime', lw=1, alpha=0.8)
+            return fig
+
         img = self.get_image()
         # img = np.ones([100,100])
         # for i in np.arange(0,100):
@@ -263,7 +302,7 @@ SEQfile(filename=r'testRecording.seq')
         raise Exception('not enough parameters')
 
     def read_line_over_time(self, start=0, stop=None, step=1, line=None, hline=None, vline=None,
-                            interpolation='linear', plot_show_line=None):
+                            interpolation='linear'):
         """
 
         :param start:
@@ -273,24 +312,8 @@ SEQfile(filename=r'testRecording.seq')
         :param hline:
         :param vline:
         :param interpolation:  'linear' or 'nearest'
-        :param plot_show_line: plot one image and show line, if Ture show current frame, if int shaw that frame
         :return:
         """
-
-        if plot_show_line is not None:
-            if plot_show_line is True:
-                self.go2frame(0)
-            else:
-                self.go2frame(plot_show_line)
-            fig, ax = plt.subplots(1, 1)
-            ax.imshow(self.get_image() - 273.15, interpolation='nearest', cmap='plasma')
-            ax.plot([line['p0']['h'], line['p1']['h']], [line['p0']['v'], line['p1']['v']],
-                    color='lime', lw=2, alpha=0.7)
-            ax.plot([line['p0']['h'], ], [line['p0']['v'], ], color='lime', lw=2, alpha=0.7, marker='o',
-                    markersize=15)
-            ax.plot([line['p1']['h'], ], [line['p1']['v'], ], color='deepskyblue', lw=2, alpha=0.7,
-                    marker='s', markersize=15)
-            return fig
 
         # preallocate arrays
         stop_ = stop if stop is not None else self.number_of_frames
