@@ -227,7 +227,14 @@ SEQfile(filename=r'testRecording.seq')
         interpolation='linear' or 'nearest'
         :param plot_show_line: if True plot the image and show the line
         """
+        img = self.get_image()
+        # img = np.ones([100,100])
+        # for i in np.arange(0,100):
+        #    for j in np.arange(0,100):
+        #        img[i,j] = i
+        return self.read_line_(img, line=line, hline=hline, vline=vline, interpolation=interpolation, plot_show_line=plot_show_line)
 
+    def read_line_(self, img, line=None, hline=None, vline=None, interpolation='linear', plot_show_line=False):
         if plot_show_line:
             fig, ax = plt.subplots(1, 1)
             ax.imshow(self.get_image() - 273.15, interpolation='nearest', cmap='plasma')
@@ -239,11 +246,6 @@ SEQfile(filename=r'testRecording.seq')
                     color='lime', lw=1, alpha=0.8)
             return fig
 
-        img = self.get_image()
-        # img = np.ones([100,100])
-        # for i in np.arange(0,100):
-        #    for j in np.arange(0,100):
-        #        img[i,j] = i
         if hline is not None:
             if (hline % 1) == 0.0:
                 val = img[int(hline), :]
