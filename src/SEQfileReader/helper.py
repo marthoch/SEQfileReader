@@ -101,8 +101,8 @@ def read_line_from_arrayofframes(frames, start=0, stop=None, step=1, line=None, 
     for i, frameNr in enumerate(range(start, stop_, step)):
         # display(i)
         fi[i] = frameNr
-        v[:, i] = read_line_from_frame (frames[:, :, frameNr],  line=line, hline=hline, vline=vline, interpolation=interpolation)['values']
+        v[:, i] = read_line_from_frame(frames[:, :, frameNr],  line=line, hline=hline, vline=vline, interpolation=interpolation)['values']
 
-    return dict(values=v, frame_number=fi)
+    return dict(values=v, frame_number=fi, v=aline['v'], h=aline['h'])
 
 # eof
