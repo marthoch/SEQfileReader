@@ -63,6 +63,7 @@ def read_line_from_frame(img, line=None, hline=None, vline=None, interpolation='
     if line is not None:
         lineLen = line.get('len')
         lineLenX = max(abs(line['p1']['v'] - line['p0']['v']), abs(line['p1']['h'] - line['p0']['h'])) + 1
+        lineLenX = int(np.round(lineLenX))
         if lineLen is None:
             lineLen = lineLenX
         if lineLen < lineLenX:
