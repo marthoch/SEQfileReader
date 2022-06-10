@@ -161,8 +161,10 @@ SEQfile(filename=r'testRecording.seq')
 
     __repr__ = __str__
 
-    def get_image(self):
+    def get_frame(self):
         return np.array(self.im.final, copy=False).reshape((self.im.height, self.im.width))
+
+    get_image = get_frame  # backwards compatibility, shall not be used
 
     def set_active_frame(self, fn):
         return self.im.get_frame(fn)
@@ -187,9 +189,13 @@ SEQfile(filename=r'testRecording.seq')
         return self.timeArray
 
     def read_as_numpy(self, selection=None, frame_range=None):
-        """
-        selection=[[h0, h1],[w0, w1]] ... [[height from to},[width from to]]
-        frameRange=[startFrame, endFrame]
+        """Read as 3d numpy array:
+
+        :param selection:   [[row0, row1],[col0, col1]] ... [[row from to},[col from to]]
+        :param frame_range: [startFrame, endFrame]
+
+        The return format corresponds with scikit-image: (pln, row, col)
+        https://scikit-image.org/docs/stable/user_guide/numpy_images.html#notes-on-the-order-of-array-dimensions
         """
         if frame_range is None:
             n_frames = self.im.num_frames
@@ -197,16 +203,16 @@ SEQfile(filename=r'testRecording.seq')
         else:
             n_frames = frame_range[1] - frame_range[0]
         if selection is None:
-            h = self.im.height
-            w = self.im.width
+            n_row = self.im.height
+            n_col = self.im.width
         else:
-            h = selection[0][1] - selection[0][0]
-            w = selection[1][1] - selection[1][0]
+            n_row = selection[0][1] - selection[0][0]
+            n_col = selection[1][1] - selection[1][0]
 
         # preallocate arrays
         fi = np.empty(n_frames, dtype=np.uint32)
         t = np.empty(n_frames, dtype=datetime.datetime)
-        v = np.empty([h, w, n_frames], dtype=np.float32)
+        v = np.empty([n_frames, n_row, n_col, ], dtype=np.float32)
 
         # for fr in self.im.frame_iter(0):
         for i, fn in enumerate(range(*frame_range)):
@@ -216,9 +222,9 @@ SEQfile(filename=r'testRecording.seq')
             t[i] = fr.frame_info.time
             img = np.array(fr.final, copy=False).reshape((fr.height, fr.width))
             if selection is None:
-                v[:, :, i] = img
+                v[i, :, :] = img
             else:
-                v[:, :, i] = img[selection[0][0]:selection[0][1], selection[1][0]:selection[1][1]]
+                v[i, :, :] = img[selection[0][0]:selection[0][1], selection[1][0]:selection[1][1]]
         if frame_range is None:  # when reading all
             self.timeArray = pd.DataFrame({'time': t})
         return t, v, fi
@@ -229,7 +235,7 @@ SEQfile(filename=r'testRecording.seq')
         interpolation='linear' or 'nearest'
         :param plot_show_line: if True plot the image and show the line
         """
-        img = self.get_image()
+        img = self.get_frame()
         # img = np.ones([100,100])
         # for i in np.arange(0,100):
         #    for j in np.arange(0,100):
