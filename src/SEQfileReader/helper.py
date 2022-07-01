@@ -90,18 +90,18 @@ def read_line_from_frame(img, line=None, hline=None, vline=None, interpolation='
 def read_line_from_arrayofframes(frames, start=0, stop=None, step=1, line=None, hline=None, vline=None, interpolation='linear', plot_show_line=False):
 
     if plot_show_line:
-        return read_line_from_frame(frames[:,:,start], line=line, hline=hline, vline=vline, interpolation=interpolation, plot_show_line=plot_show_line)
+        return read_line_from_frame(frames[start, :, :], line=line, hline=hline, vline=vline, interpolation=interpolation, plot_show_line=plot_show_line)
 
-    stop_ = stop if stop is not None else frames.shape[2]
+    stop_ = stop if stop is not None else frames.shape[0]
     n_frames = (stop_ - start) // step
     fi = np.empty(n_frames, dtype=np.uint32)
-    aline = read_line_from_frame(frames[:, :, start], line=line, hline=hline, vline=vline, interpolation=interpolation)
+    aline = read_line_from_frame(frames[start, :, :], line=line, hline=hline, vline=vline, interpolation=interpolation)
     v = np.empty([aline['values'].shape[0], n_frames], dtype=np.float32)
 
     for i, frameNr in enumerate(range(start, stop_, step)):
         # display(i)
         fi[i] = frameNr
-        v[:, i] = read_line_from_frame(frames[:, :, frameNr],  line=line, hline=hline, vline=vline, interpolation=interpolation)['values']
+        v[:, i] = read_line_from_frame(frames[frameNr, :, :],  line=line, hline=hline, vline=vline, interpolation=interpolation)['values']
 
     return dict(values=v, frame_number=fi, v=aline['v'], h=aline['h'])
 
