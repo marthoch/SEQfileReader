@@ -275,6 +275,32 @@ SEQfile(filename=r'testRecording.seq')
         return dict(time=t, values=v, frame_number=fi)
 
 
+    def read_line_over_time_df(self, start=0, stop=None, step=1, line=None, hline=None, vline=None,
+                            interpolation='linear'):
+        """
+
+        :param start:
+        :param stop:
+        :param step:
+        :param line:  dict(p0=dict(v=1, h=1), p1=dict(v=10, h=50), len=None)
+        :param hline:
+        :param vline:
+        :param interpolation:  'linear' or 'nearest'
+        :return:
+        """
+        lines_over_time = self.read_line_over_time(start=start, stop=stop, step=step, line=line, hline=hline, vline=vline,
+                            interpolation=interpolation)
+        T = pd.Series(lines_over_time['time'], name='time')
+        T_sec = (T - T.iloc[0]).dt.total_seconds()
+        T_secN = pd.Series(np.arange(T.shape[0])*1/self.frameRate, name='time_secN')
+        T_err = (T_sec - T_secN).abs().max()
+        if (T_err > 0.000):
+            log.warning(f'time_sec - time_secN  = {T_err}')
+        pixels = pd.DataFrame(lines_over_time['values'].T)
+        time = pd.concat([T, T_sec, T_secN], axis=1, keys=['timestamp', 'time_sec', 'time_secN'])
+        return pd.concat([time, pixels], axis=1, keys=['time', 'pixels'])
+
+
 class FrameIterator:
     """Iterator over Frames
     It acts on the SEQ's current frame thus there can be only one iterator active at the same time.
