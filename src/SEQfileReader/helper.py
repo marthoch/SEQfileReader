@@ -17,17 +17,6 @@ log.setLevel(logging.DEBUG)
 
 
 def read_line_from_frame(img, line=None, hline=None, vline=None, interpolation='linear', plot_show_line=False):
-    if plot_show_line:
-        fig, ax = plt.subplots(1, 1)
-        ax.imshow(img - 273.15, interpolation='nearest', cmap='plasma')
-        ax.plot([line['p0']['h'], ], [line['p0']['v'], ], color='lime', lw=2, alpha=0.5, marker='o',
-                markersize=20)
-        ax.plot([line['p1']['h'], ], [line['p1']['v'], ], color='deepskyblue', lw=2, alpha=0.5,
-                marker='s', markersize=20)
-        ax.plot([line['p0']['h'], line['p1']['h']], [line['p0']['v'], line['p1']['v']],
-                color='lime', lw=1, alpha=0.8)
-        return fig
-
     if hline is not None:
         if (hline % 1) == 0.0:
             val = img[int(hline), :]

@@ -8,7 +8,7 @@ import numpy as np
 import datetime
 import pandas as pd
 from numpy import ndarray
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 
 from . import helper
 
@@ -230,18 +230,35 @@ SEQfile(filename=r'testRecording.seq')
             self.timeArray = pd.DataFrame({'time': t})
         return t, v, fi
 
-    def read_line(self, line=None, hline=None, vline=None, interpolation='linear', plot_show_line=False):
+    def plot_show_line(self, line):
+        """
+        line = dict(p0=dict(v=1, h=1), p1=dict(v=10, h=50), len=None)
+        """
+        img = self.get_frame()
+        fig, ax = plt.subplots(1, 1)
+        ax.imshow(img - 273.15, interpolation='nearest', cmap='plasma')
+        ax.plot([line['p0']['h'], ], [line['p0']['v'], ], color='lime', lw=2, alpha=0.5, marker='o',
+                markersize=20)
+        ax.plot([line['p1']['h'], ], [line['p1']['v'], ], color='deepskyblue', lw=2, alpha=0.5,
+                marker='s', markersize=20)
+        ax.plot([line['p0']['h'], line['p1']['h']], [line['p0']['v'], line['p1']['v']],
+                color='lime', lw=1, alpha=0.8)
+        return fig
+
+
+    def read_line(self, line=None, hline=None, vline=None, interpolation='linear', return_as_df=True):
         """
         line = dict(p0=dict(v=1, h=1), p1=dict(v=10, h=50), len=None)
         interpolation='linear' or 'nearest'
-        :param plot_show_line: if True plot the image and show the line
+
+        use self.plot_show_line(line) to show where the line is set.
         """
         img = self.get_frame()
-        # img = np.ones([100,100])
-        # for i in np.arange(0,100):
-        #    for j in np.arange(0,100):
-        #        img[i,j] = i
-        return helper.read_line_from_frame(img, line=line, hline=hline, vline=vline, interpolation=interpolation, plot_show_line=plot_show_line)
+        ret = helper.read_line_from_frame(img, line=line, hline=hline, vline=vline, interpolation=interpolation)
+        if return_as_df:
+            return pd.DataFrame.from_dict(ret)
+        else:
+            return ret
 
 
     def read_line_over_time(self, start=0, stop=None, step=1, line=None, hline=None, vline=None,
@@ -293,7 +310,8 @@ SEQfile(filename=r'testRecording.seq')
                             interpolation=interpolation)
         T = pd.Series(lines_over_time['time'], name='time')
         T_sec = (T - T.iloc[0]).dt.total_seconds()
-        T_secN = pd.Series(np.arange(T.shape[0])*1/self.frameRate, name='time_secN')
+        T_secN = self.get_time_sec0_df_nom()['timeSec0_nom'].iloc[start:stop:step]
+        T_secN.rename('time_secN')
         T_err = (T_sec - T_secN).abs().max()
         if (T_err > 0.000):
             log.warning(f'time_sec - time_secN  = {T_err}')
