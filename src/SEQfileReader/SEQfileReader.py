@@ -52,7 +52,8 @@ SEQfile(filename=r'testRecording.seq')
 
     """
 
-    frameRate_nominal_available = 200. / 2 ** np.arange(0, 5)
+    frameRate_nominal_available = np.concatenate([200. / 2 ** np.arange(0, 5), # A655sc
+                                                  30. / 2 ** np.arange(0, 3)]) # T650sc ???
 
     def __init__(self, filename):
         log.debug('opening "%s"', filename)
