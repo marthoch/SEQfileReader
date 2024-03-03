@@ -55,12 +55,15 @@ SEQfile(filename=r'testRecording.seq')
     frameRate_nominal_available = np.concatenate([200. / 2 ** np.arange(0, 5), # A655sc
                                                   30. / 2 ** np.arange(0, 3)]) # T650sc ???
 
-    def __init__(self, filename):
+    def __init__(self, filename, in_celsius=False):
         log.debug('opening "%s"', filename)
         self._filename = filename
         self.im = fnv.file.ImagerFile(self._filename)
         self.im.unit = fnv.Unit.TEMPERATURE_FACTORY
-        self.im.temp_type = fnv.TempType.KELVIN
+        if in_celsius:
+            self.im.temp_type = fnv.TempType.CELSIUS
+        else:
+            self.im.temp_type = fnv.TempType.KELVIN
         self.im.get_frame(0)
         self._firstFrame_time = self.im.frame_info.time
 
@@ -236,7 +239,7 @@ SEQfile(filename=r'testRecording.seq')
         """
         img = self.get_frame()
         fig, ax = plt.subplots(1, 1)
-        ax.imshow(img - 273.15, interpolation='nearest', cmap='plasma')
+        ax.imshow(img, interpolation='nearest', cmap='plasma')
         ax.plot([line['p0']['h'], ], [line['p0']['v'], ], color='lime', lw=2, alpha=0.5, marker='o',
                 markersize=20)
         ax.plot([line['p1']['h'], ], [line['p1']['v'], ], color='deepskyblue', lw=2, alpha=0.5,
