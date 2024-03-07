@@ -70,6 +70,13 @@ def read_line_from_frame(img, line=None, hline=None, vline=None, interpolation='
             vi = v.round(decimals=0).astype(int)
             hi = h.round(decimals=0).astype(int)
             val = img[vi, hi]
+        elif interpolation == 'nearest_5':
+            vi = v.round(decimals=0).astype(int)
+            hi = h.round(decimals=0).astype(int)
+            val = np.zeros_like(vi, dtype=np.float64)
+            for i in range(-2,3):
+                val += img[vi, hi]
+            val /= 5
         else:
             raise Exception("interpolation not known: use interpolation='linear' or 'nearest'")
         return dict(v=v, h=h, values=val)
