@@ -320,7 +320,16 @@ SEQfile(filename=r'testRecording.seq')
             log.warning(f'time_sec - time_secN  = {T_err}')
         pixels = pd.DataFrame(lines_over_time['values'].T)
         time = pd.concat([T, T_sec, T_secN], axis=1, keys=['timestamp', 'time_sec', 'time_secN'])
-        return pd.concat([time, pixels], axis=1, keys=['time', 'pixels'])
+        df = pd.concat([time, pixels], axis=1, keys=['time', 'pixels'])
+        # recal
+        df['recalibration'] = (df.pixels.diff() == 0.0).all(axis=1)
+        r = df['recalibration'].diff().cumsum() + 1
+        r[r.isna()] = 1
+        r[df['recalibration']] *= -1
+        df['recalibration_occassion'] = r
+        if df['recalibration'].any():
+            log.warning('recording contains recalibration')
+        return df
 
 
 class FrameIterator:
