@@ -66,19 +66,58 @@ SEQfile(filename=r'testRecording.seq')
             self.im.temp_type = fnv.TempType.KELVIN
         self.im.get_frame(0)
         self._firstFrame_time = self.im.frame_info.time
-
-        # total recording time, frame rate
         self.im.get_frame(self.im.num_frames - 1)
-        last_frame_time = self.im.frame_info.time
-        fr_ = 1 / ((last_frame_time - self._firstFrame_time).total_seconds() / (self.im.num_frames - 1))
-        idx = (np.abs(self.frameRate_nominal_available - fr_)).argmin()
-        self.frameRate = self.frameRate_nominal_available[idx]
-        self.recordingTime = last_frame_time - self._firstFrame_time
+        self._lastFrame_time = self.im.frame_info.time
+        self.recordingTime = self._lastFrame_time - self._firstFrame_time
+        self.timeArray = None
+        self._estimate_framerate()
 
         # reset
         self.im.get_frame(0)
 
-        self.timeArray = None
+
+    def _estimate_framerate(self):
+        # old: fr_ = 1 / ((self._lastFrame_time - self._firstFrame_time).total_seconds() / (self.im.num_frames - 1))
+        timedf = self.read_time_df()
+        tdiff = timedf.time_file.diff().dt.total_seconds()
+        tdiff_median = tdiff.median()
+        tdiff_err = np.abs(tdiff - tdiff_median).max()
+        if tdiff_err / tdiff_median > 0.1:
+            log.warning(f'The time deviates up to {tdiff_err:.3} s or {tdiff_err / tdiff_median:.3} x sample time' )
+        fr_ = 1/tdiff_median
+        idx = (np.abs(self.frameRate_nominal_available - fr_)).argmin()
+        self.frameRate = self.frameRate_nominal_available[idx]
+        if np.abs(self.frameRate - fr_)/fr_ > 0.01:
+            log.warning(f'Estimated frame rate, {fr_:.3} Hz, diverges from predefined frame rate {self.frameRate:.3}')
+
+    def analyse_framerate(self):
+        timedf = self.read_time_df()
+        tdiff = timedf.time_file.diff().dt.total_seconds()
+
+        T = self.get_time()
+        T_err = (T.time_file - T.time_nom).dt.total_seconds().abs().max()
+
+        print(f"""Relative frame rate deviation:
+{tdiff.describe()}
+
+Absolute frame rate deviation:
+{((tdiff - 1/self.frameRate).describe())}
+
+Max error between time in file and nominal time: {T_err} s
+""")
+        fig, (ax, ax2) = plt.subplots(2,1)
+        r_tdiff = tdiff * self.frameRate
+        r_tdiff.hist(ax=ax, bins = np.arange(-0.5, int(r_tdiff.max()+2)))
+        ax.set_xlabel('multiples of frame rate')
+        ax.grid(True)
+
+        ax2.plot(timedf.time_file, (tdiff * self.frameRate - 1))
+        ax2.set_xlabel('time')
+        ax2.set_ylabel('nr dropped frames')
+        ax2.grid(True)
+
+        return fig
+
 
     @property
     def filename_full(self):
@@ -173,6 +212,11 @@ SEQfile(filename=r'testRecording.seq')
     def set_active_frame(self, fn):
         return self.im.get_frame(fn)
 
+
+    def get_time(self):
+        return pd.concat([self.timeArray, self.get_time_df_nom(), self.get_time_sec0_df_nom()], axis=1)
+
+
     def get_time_df_nom(self):
         """Time vector nominally spaced (based on frame rate) as pandas DataFrame."""
         return pd.DataFrame({'time_nom': self._firstFrame_time + datetime.timedelta(days=0, seconds=(
@@ -189,7 +233,7 @@ SEQfile(filename=r'testRecording.seq')
             for i, fr in enumerate(self.im.frame_iter(0)):
                 t[i] = fr.frame_info.time
                 fi[i] = fr.frame_number
-            self.timeArray = pd.DataFrame({'time_file': t, 'fn': fi})
+            self.timeArray = pd.DataFrame(dict(fn=fi, time_file=t))
         return self.timeArray
 
     def read_as_numpy(self, selection=None, frame_range=None):
@@ -311,6 +355,8 @@ SEQfile(filename=r'testRecording.seq')
         """
         lines_over_time = self.read_line_over_time(start=start, stop=stop, step=step, line=line, hline=hline, vline=vline,
                             interpolation=interpolation)
+        fn = self.get_time().fn
+        fn.rename('frame_number')
         T = pd.Series(lines_over_time['time'], name='time')
         T_sec = (T - T.iloc[0]).dt.total_seconds()
         T_secN = self.get_time_sec0_df_nom()['timeSec0_nom'].iloc[start:stop:step]
@@ -319,7 +365,7 @@ SEQfile(filename=r'testRecording.seq')
         if (T_err > 0.000):
             log.warning(f'time_sec - time_secN  = {T_err}')
         pixels = pd.DataFrame(lines_over_time['values'].T)
-        time = pd.concat([T, T_sec, T_secN], axis=1, keys=['timestamp', 'time_sec', 'time_secN'])
+        time = pd.concat([T, T_sec, T_secN, fn], axis=1, keys=['timestamp', 'time_sec', 'time_secN', 'frame_number'])
         df = pd.concat([time, pixels], axis=1, keys=['time', 'pixels'])
         # recal
         df['recalibration'] = (df.pixels.diff() == 0.0).all(axis=1)
