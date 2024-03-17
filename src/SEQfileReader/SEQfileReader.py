@@ -79,7 +79,7 @@ SEQfile(filename=r'testRecording.seq')
     def _estimate_framerate(self):
         # old: fr_ = 1 / ((self._lastFrame_time - self._firstFrame_time).total_seconds() / (self.im.num_frames - 1))
         timedf = self.read_time_df()
-        tdiff = timedf.time_file.diff().dt.total_seconds()
+        tdiff = timedf.timestamp.diff().dt.total_seconds()
         tdiff_median = tdiff.median()
         tdiff_err = np.abs(tdiff - tdiff_median).max()
         if tdiff_err / tdiff_median > 0.1:
@@ -92,10 +92,10 @@ SEQfile(filename=r'testRecording.seq')
 
     def analyse_framerate(self):
         timedf = self.read_time_df()
-        tdiff = timedf.time_file.diff().dt.total_seconds()
+        tdiff = timedf.timestamp.diff().dt.total_seconds()
 
         T = self.get_time()
-        T_err = (T.time_file - T.time_nom).dt.total_seconds().abs().max()
+        T_err = (T.timestamp - T.time_nom).dt.total_seconds().abs().max()
 
         print(f"""Relative frame rate deviation:
 {tdiff.describe()}
@@ -111,7 +111,8 @@ Max error between time in file and nominal time: {T_err} s
         ax.set_xlabel('multiples of frame rate')
         ax.grid(True)
 
-        ax2.plot(timedf.time_file, (tdiff * self.frameRate - 1))
+        ax2.plot(timedf.timestamp, (tdiff * self.frameRate - 1))
+        ax2.axhline(0.5, color='red', lw=1, zorder=-1)
         ax2.set_xlabel('time')
         ax2.set_ylabel('nr dropped frames')
         ax2.grid(True)
@@ -209,8 +210,8 @@ Max error between time in file and nominal time: {T_err} s
 
     get_image = get_frame  # backwards compatibility, shall not be used
 
-    def set_active_frame(self, fn):
-        return self.im.get_frame(fn)
+    def set_active_frame(self, frame_number):
+        return self.im.get_frame(frame_number)
 
 
     def get_time(self):
@@ -233,7 +234,7 @@ Max error between time in file and nominal time: {T_err} s
             for i, fr in enumerate(self.im.frame_iter(0)):
                 t[i] = fr.frame_info.time
                 fi[i] = fr.frame_number
-            self.timeArray = pd.DataFrame(dict(fn=fi, time_file=t))
+            self.timeArray = pd.DataFrame(dict(frame_number=fi, timestamp=t))
         return self.timeArray
 
     def read_as_numpy(self, selection=None, frame_range=None):
@@ -353,10 +354,11 @@ Max error between time in file and nominal time: {T_err} s
         :param interpolation:  'linear' or 'nearest'
         :return:
         """
+        # FIXME: stop does not work: time
+
         lines_over_time = self.read_line_over_time(start=start, stop=stop, step=step, line=line, hline=hline, vline=vline,
                             interpolation=interpolation)
-        fn = self.get_time().fn
-        fn.rename('frame_number')
+        frame_number = self.get_time().frame_number
         T = pd.Series(lines_over_time['time'], name='time')
         T_sec = (T - T.iloc[0]).dt.total_seconds()
         T_secN = self.get_time_sec0_df_nom()['timeSec0_nom'].iloc[start:stop:step]
@@ -365,7 +367,9 @@ Max error between time in file and nominal time: {T_err} s
         if (T_err > 0.000):
             log.warning(f'time_sec - time_secN  = {T_err}')
         pixels = pd.DataFrame(lines_over_time['values'].T)
-        time = pd.concat([T, T_sec, T_secN, fn], axis=1, keys=['timestamp', 'time_sec', 'time_secN', 'frame_number'])
+        log.debug(f'pixels {pixels.shape}')
+        time = pd.concat([T, T_sec, T_secN, frame_number], axis=1, keys=['timestamp', 'time_sec', 'time_secN', 'frame_number'])
+        log.debug(f'time {time.shape}')
         df = pd.concat([time, pixels], axis=1, keys=['time', 'pixels'])
         # recal
         df['recalibration'] = (df.pixels.diff() == 0.0).all(axis=1)
@@ -375,6 +379,38 @@ Max error between time in file and nominal time: {T_err} s
         df['recalibration_occassion'] = r
         if df['recalibration'].any():
             log.warning('recording contains recalibration')
+        return df
+
+
+    def read_line_over_time_df_fixdropedframes(self, start=0, stop=None, step=1, line=None, hline=None, vline=None,
+                            interpolation='linear', df=None):
+        """
+
+        :param start:
+        :param stop:
+        :param step:
+        :param line:  dict(p0=dict(v=1, h=1), p1=dict(v=10, h=50), len=None)
+        :param hline:
+        :param vline:
+        :param interpolation:  'linear' or 'nearest'
+        :return:
+        """
+        # FIXME: stop does not work: time
+        if df is None:
+            df = self.read_line_over_time_df(start=start, stop=stop, step=step, line=line, hline=hline, vline=vline,
+                                             interpolation=interpolation)
+        df = df.copy()
+        df['interpolated'] = False
+        df['k'] = (df.time.time_sec * self.frameRate).round()
+        df = df.reset_index(drop=True).drop_duplicates(subset=[('k', '')]).set_index('k')
+        df = df.reindex(np.arange(df.index[-1] + 1))
+        df.loc[:, ('time', 'time_secN')] = (1 / self.frameRate) * np.arange(df.shape[0])
+        # df.loc[:, ('time', 'timestamp')].interpolate(inplace=True)
+        df.loc[:, ('time', 'time_sec')].interpolate(inplace=True)
+        # df.loc[:, ('time', 'frame_number')].interpolate(inplace=True)
+        for i in df.pixels.columns:
+            df.loc[:, ('pixels', i)].interpolate(inplace=True)
+        df.loc[:, ('interpolated', '')].fillna(True, inplace=True)
         return df
 
 
