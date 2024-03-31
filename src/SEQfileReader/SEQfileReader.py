@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-__author__ = 'Martin Hochwallner <marthoch@users.noreply.github.com>'
-__email__ = "marthoch@users.noreply.github.com"
+__author__  = 'Martin Hochwallner <marthoch@users.noreply.github.com>'
+__email__   = "marthoch@users.noreply.github.com"
 __license__ = "BSD 3-clause"
 
 import os
@@ -32,7 +32,7 @@ except Exception as e:
 
 
 class SEQfileReader:
-    """SEQfileReader: High level reader for FLIR .seq files (thermography recordings (IR))
+    """SEQfileReader: High level reader for FLIR *.seq, and *.csq files (thermography recordings (IR))
     based on the FLIR Science File SDK
 
 >>> seq = SEQfileReader(filename=r'path to file.seq')
@@ -53,7 +53,7 @@ SEQfile(filename=r'testRecording.seq')
     """
 
     frameRate_nominal_available = np.concatenate([200. / 2 ** np.arange(0, 5), # A655sc
-                                                  30. / 2 ** np.arange(0, 3)]) # T650sc ???
+                                                  30. / 2 ** np.arange(0, 3)]) # T650sc # FIXME: ???
 
     def __init__(self, filename, in_celsius=False):
         log.debug('opening "%s"', filename)
@@ -64,16 +64,16 @@ SEQfile(filename=r'testRecording.seq')
             self.im.temp_type = fnv.TempType.CELSIUS
         else:
             self.im.temp_type = fnv.TempType.KELVIN
-        self.im.get_frame(0)
+        self.go2frame(0)
         self._firstFrame_time = self.im.frame_info.time
-        self.im.get_frame(self.im.num_frames - 1)
+        self.go2frame(-1)
         self._lastFrame_time = self.im.frame_info.time
-        self.recordingTime = self._lastFrame_time - self._firstFrame_time
         self.timeArray = None
         self._estimate_framerate()
+        self.recordingTime = self._lastFrame_time - self._firstFrame_time + datetime.timedelta(seconds=1/self.frameRate)
 
         # reset
-        self.im.get_frame(0)
+        self.go2frame(0)
 
 
     def _estimate_framerate(self):
@@ -89,6 +89,7 @@ SEQfile(filename=r'testRecording.seq')
         self.frameRate = self.frameRate_nominal_available[idx]
         if np.abs(self.frameRate - fr_)/fr_ > 0.01:
             log.warning(f'Estimated frame rate, {fr_:.3} Hz, diverges from predefined frame rate {self.frameRate:.3}')
+
 
     def analyse_framerate(self):
         timedf = self.read_time_df()
@@ -181,6 +182,7 @@ Max error between time in file and nominal time: {T_err} s
                 self.im.get_frame(0)
                 raise IndexError('Out of range: {} not it [0..{}]'.format(frame_number, self.im.num_frames - 1))
 
+
     def frame_iter(self, start=0, stop=None, step=1):
         return FrameIterator(seq=self, start=start, stop=stop, step=step)
 
@@ -205,14 +207,16 @@ Max error between time in file and nominal time: {T_err} s
 
     __repr__ = __str__
 
+
     def get_frame(self):
         return np.array(self.im.final, copy=False).reshape((self.im.height, self.im.width))
 
     get_image = get_frame  # backwards compatibility, shall not be used
 
-    def set_active_frame(self, frame_number):
-        return self.im.get_frame(frame_number)
 
+    def set_active_frame(self, frame_number):
+        #return self.im.get_frame(frame_number)
+        raise('use go2frame instead')
 
     def get_time(self):
         return pd.concat([self.timeArray, self.get_time_df_nom(), self.get_time_sec0_df_nom()], axis=1)
@@ -221,36 +225,39 @@ Max error between time in file and nominal time: {T_err} s
     def get_time_df_nom(self):
         """Time vector nominally spaced (based on frame rate) as pandas DataFrame."""
         return pd.DataFrame({'time_nom': self._firstFrame_time + datetime.timedelta(days=0, seconds=(
-                1 / self.frameRate)) * np.arange(self.im.num_frames)})
+                1 / self.frameRate)) * np.arange(self.number_of_frames)})
+
 
     def get_time_sec0_df_nom(self):
         """Time vector in sec starting with 0, nominally spaced (based on frame rate) as pandas DataFrame."""
-        return pd.DataFrame({'timeSec0_nom': (1 / self.frameRate) * np.arange(self.im.num_frames)})
+        return pd.DataFrame({'timeSec0_nom': (1 / self.frameRate) * np.arange(self.number_of_frames)})
+
 
     def read_time_df(self, reread=False):
         if reread or (self.timeArray is None):
-            t = np.empty(self.im.num_frames, dtype=datetime.datetime)
-            fi: ndarray = np.empty(self.im.num_frames, dtype=np.uint32)
-            for i, fr in enumerate(self.im.frame_iter(0)):
-                t[i] = fr.frame_info.time
-                fi[i] = fr.frame_number
+            t = np.empty(self.number_of_frames, dtype=datetime.datetime)
+            fi: ndarray = np.empty(self.number_of_frames, dtype=np.uint32)
+            for i, fr in enumerate(self.frame_iter()):
+                t[i] = fr.current_frame_time
+                fi[i] = fr.current_frame_number
             self.timeArray = pd.DataFrame(dict(frame_number=fi, timestamp=t))
         return self.timeArray
 
-    def read_as_numpy(self, selection=None, frame_range=None):
+
+    def read_as_numpy(self, selection=None, start=0, stop=None, step=1):
         """Read as 3d numpy array:
 
         :param selection:   [[row0, row1],[col0, col1]] ... [[row from to},[col from to]]
-        :param frame_range: [startFrame, endFrame]
+        :param start:
+        :param stop:
+        :param step:
 
         The return format corresponds with scikit-image: (pln, row, col)
         https://scikit-image.org/docs/stable/user_guide/numpy_images.html#notes-on-the-order-of-array-dimensions
         """
-        if frame_range is None:
-            n_frames = self.im.num_frames
-            frame_range = [0, self.im.num_frames]
-        else:
-            n_frames = frame_range[1] - frame_range[0]
+        if stop is None:
+            stop = self.number_of_frames
+        n_frames = (stop - start -1) // step + 1
         if selection is None:
             n_row = self.im.height
             n_col = self.im.width
@@ -264,19 +271,15 @@ Max error between time in file and nominal time: {T_err} s
         v = np.empty([n_frames, n_row, n_col, ], dtype=np.float32)
 
         # for fr in self.im.frame_iter(0):
-        for i, fn in enumerate(range(*frame_range)):
-            self.im.get_frame(fn)
-            fr = self.im
-            fi[i] = fr.frame_number
-            t[i] = fr.frame_info.time
-            img = np.array(fr.final, copy=False).reshape((fr.height, fr.width))
+        for i, fr in enumerate(self.frame_iter(start=start, stop=stop, step=step)):
+            fi[i] = fr.current_frame_number
+            img = self.get_frame()
             if selection is None:
                 v[i, :, :] = img
             else:
                 v[i, :, :] = img[selection[0][0]:selection[0][1], selection[1][0]:selection[1][1]]
-        if frame_range is None:  # when reading all
-            self.timeArray = pd.DataFrame({'time': t})
-        return t, v, fi
+            T = pd.merge(self.get_time(), pd.DataFrame(dict(frame_number=fi)), on='frame_number')
+        return v, T
 
     def plot_show_line(self, line):
         """
@@ -367,9 +370,10 @@ Max error between time in file and nominal time: {T_err} s
         if (T_err > 0.000):
             log.warning(f'time_sec - time_secN  = {T_err}')
         pixels = pd.DataFrame(lines_over_time['values'].T)
-        log.debug(f'pixels {pixels.shape}')
+        #log.debug(f'pixels {pixels.shape}')
         time = pd.concat([T, T_sec, T_secN, frame_number], axis=1, keys=['timestamp', 'time_sec', 'time_secN', 'frame_number'])
-        log.debug(f'time {time.shape}')
+
+        #log.debug(f'time {time.shape}')
         df = pd.concat([time, pixels], axis=1, keys=['time', 'pixels'])
         # recal
         df['recalibration'] = (df.pixels.diff() == 0.0).all(axis=1)
