@@ -55,7 +55,19 @@ SEQfile(filename=r'testRecording.seq')
     frameRate_nominal_available = np.concatenate([200. / 2 ** np.arange(0, 5), # A655sc
                                                   30. / 2 ** np.arange(0, 3)]) # T650sc # FIXME: ???
 
-    def __init__(self, filename, in_celsius=False):
+    def __init__(self, filename, in_celsius=False, frameRate_forced=None):
+        """
+
+:param filename:
+
+:param in_celsius:
+    False: temperatur in Kelvin
+    True:  temperture in Celcius
+
+:param frameRate_forced:
+    None: frame rate is estimated
+    frame rate in Hz: value is forced
+        """
         log.debug('opening "%s"', filename)
         self._filename = filename
         self.im = fnv.file.ImagerFile(self._filename)
@@ -69,7 +81,12 @@ SEQfile(filename=r'testRecording.seq')
         self.go2frame(-1)
         self._lastFrame_time = self.im.frame_info.time
         self.timeArray = None
-        self._estimate_framerate()
+        if frameRate_forced is None:
+            self.frameRate_forced = False
+            self._estimate_framerate()
+        else:
+            self.frameRate_forced = True
+            self.frameRate = frameRate_forced
         self.recordingTime = self._lastFrame_time - self._firstFrame_time + datetime.timedelta(seconds=1/self.frameRate)
 
         # reset
@@ -187,23 +204,20 @@ Max error between time in file and nominal time: {T_err} s
         return FrameIterator(seq=self, start=start, stop=stop, step=step)
 
     def __str__(self):
-        return """SEQfileReader(filename=r'{s.filename}')
-    unit: ............... {s.im.unit.name} / {s.im.temp_type.name} 
-    image size: ......... {s.im.width} x {s.im.height}
-    number of frames: ... {s.number_of_frames}
-    recording start time: {recStartTime}
-    recording time: ..... {recordingTime} sec
-    frame rate: ......... {s.frameRate} Hz
+        return f"""SEQfileReader(filename=r'{self.filename}')
+    unit: ............... {self.im.unit.name} / {self.im.temp_type.name} 
+    image size: ......... {self.im.width} x {self.im.height}
+    number of frames: ... {self.number_of_frames}
+    recording start time: {self._firstFrame_time.isoformat()}
+    recording time: ..... {self.recordingTime.total_seconds()} sec
+    frame rate: ......... {self.frameRate} Hz {'(forced)' if self.frameRate_forced else ''}
     current frame:
-        frame number: ....... {s.current_frame_number}
-        preset number: ...... {s.im.num_presets}
-        date/time of frame:   {frame_info_time}
-        emissivity:               {s.emissivity}
-        atmospheric_transmission: {s.atmospheric_transmission}
-        """.format(s=self,
-                   frame_info_time=self.im.frame_info.time.isoformat(),
-                   recStartTime=self._firstFrame_time.isoformat(),
-                   recordingTime=self.recordingTime.total_seconds())
+        frame number: ....... {self.current_frame_number}
+        preset number: ...... {self.im.num_presets}
+        date/time of frame:   {self.im.frame_info.time.isoformat()}
+        emissivity:               {self.emissivity}
+        atmospheric_transmission: {self.atmospheric_transmission}
+"""
 
     __repr__ = __str__
 
