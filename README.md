@@ -8,3 +8,4 @@ High level reader for FLIR .seq files (thermography recordings (IR)) based on th
     Attention: Use the setup.py attached to the "Getting started with ..."  as the one in the SDK is broken.  Fixed in 4.1.0/ 2022-04-01?
     
     
+Development uses FLIRScienceFileSDK-2024.3.1_win.

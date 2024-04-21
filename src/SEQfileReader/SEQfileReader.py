@@ -5,6 +5,7 @@ __license__ = "BSD 3-clause"
 
 import os
 import numpy as np
+import scipy as sp
 import datetime
 import pandas as pd
 from numpy import ndarray
@@ -35,11 +36,14 @@ class SEQfileReader:
     """SEQfileReader: High level reader for FLIR *.seq, and *.csq files (thermography recordings (IR))
     based on the FLIR Science File SDK
 
->>> seq = SEQfileReader(filename=r'path to file.seq')
+>>> seq = SEQfileReader(filename=r'path to file.seq', in_celsius=True)
 
 >>> seq
 SEQfile(filename=r'testRecording.seq')
-    unit: ............... TEMPERATURE_FACTORY / KELVIN
+    camera: ............. FLIR A655sc / 55001-0302 / SN:0
+    lens: ............... FOL25 / T197909 / SN:0
+    interlaced: ......... False
+    unit: ............... TEMPERATURE_FACTORY / CELSIUS
     image size: ......... 640 x 120
     number of frames: ... 199
     recording start time: 2000-00-00T00:00:00.000000
@@ -76,6 +80,17 @@ SEQfile(filename=r'testRecording.seq')
             self.im.temp_type = fnv.TempType.CELSIUS
         else:
             self.im.temp_type = fnv.TempType.KELVIN
+
+        self.camera             = self.im.source_info.camera  # .camera_model
+        self.camera_part_number = self.im.source_info.camera_part_number
+        self.camera_serial      = self.im.source_info.camera_serial
+        self.lens             = self.im.source_info.lens
+        self.lens_part_number = self.im.source_info.lens_part_number
+        self.lens_serial      = self.im.source_info.lens_serial
+
+        self.interlaced = self.im.source_info.interlaced
+        self.source_time = self.im.source_info.time
+
         self.go2frame(0)
         self._firstFrame_time = self.im.frame_info.time
         self.go2frame(-1)
@@ -205,18 +220,26 @@ Max error between time in file and nominal time: {T_err} s
 
     def __str__(self):
         return f"""SEQfileReader(filename=r'{self.filename}')
+    camera: ............. {self.camera} / {self.camera_part_number} / SN:{self.camera_serial}
+    lens: ............... {self.lens} / {self.lens_part_number} / SN:{self.lens_serial}
+    interlaced: ......... {self.interlaced}
     unit: ............... {self.im.unit.name} / {self.im.temp_type.name} 
     image size: ......... {self.im.width} x {self.im.height}
     number of frames: ... {self.number_of_frames}
+    source time:          {self.source_time.isoformat()}
     recording start time: {self._firstFrame_time.isoformat()}
     recording time: ..... {self.recordingTime.total_seconds()} sec
     frame rate: ......... {self.frameRate} Hz {'(forced)' if self.frameRate_forced else ''}
     current frame:
         frame number: ....... {self.current_frame_number}
-        preset number: ...... {self.im.num_presets}
+        preset: ............. {self.im.preset}
         date/time of frame:   {self.im.frame_info.time.isoformat()}
         emissivity:               {self.emissivity}
         atmospheric_transmission: {self.atmospheric_transmission}
+        distance: ................{self.im.object_parameters.distance}
+        preset: ............. {self.im.preset}  {self.im.source_info.preset_info[self.im.preset].available}
+            frame rate: ..... {self.im.source_info.preset_info[self.im.preset].frame_rate} Hz (valid={self.im.source_info.preset_info[self.im.preset].frame_rate_valid}) 
+            calibration range: {sp.constants.convert_temperature(self.im.source_info.preset_info[self.im.preset].min_temp, 'K', 'C')} - {sp.constants.convert_temperature(self.im.source_info.preset_info[self.im.preset].max_temp, 'K', 'C')} degC
 """
 
     __repr__ = __str__
