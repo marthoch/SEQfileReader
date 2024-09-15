@@ -390,7 +390,7 @@ Max error between time in file and nominal time: {T_err} s
         self.go2frame(0)
         aline = self.read_line(line=line, hline=hline, vline=vline, interpolation=interpolation)
         v = np.empty([aline['values'].shape[0], n_frames], dtype=np.float32)
-        has_mark_atribute = 'Mark' in self.im.frame_info
+        has_mark_atribute = self.has_mark_property
         if has_mark_atribute:
             marki = np.empty(n_frames, dtype=np.bool_)
 
@@ -401,9 +401,10 @@ Max error between time in file and nominal time: {T_err} s
             if has_mark_atribute:
                 marki[i] = seqFrame.im.frame_info['Mark']['value'] == 'T'
             v[:, i] = self.read_line(line=line, hline=hline, vline=vline, interpolation=interpolation)['values']
-
-        return dict(time=t, values=v, frame_number=fi, frame_marked=marki)
-
+        ret = dict(time=t, values=v, frame_number=fi)
+        if has_mark_atribute:
+            ret['frame_marked'] = marki
+        return ret
 
     def read_line_over_time_df(self, start=0, stop=None, step=1, line=None, hline=None, vline=None,
                             interpolation='linear'):
@@ -435,8 +436,11 @@ Max error between time in file and nominal time: {T_err} s
         time = pd.concat([T, T_sec, T_secN, frame_number], axis=1, keys=['timestamp', 'time_sec', 'time_secN', 'frame_number'])
 
         #log.debug(f'time {time.shape}')
-        marked = pd.Series(lines_over_time['frame_marked'], name='marked')
-        df = pd.concat([time, marked, pixels], axis=1, keys=['time', 'marked', 'pixels'])
+        if self.has_mark_property:
+            marked = pd.Series(lines_over_time['frame_marked'], name='marked')
+            df = pd.concat([time, marked, pixels], axis=1, keys=['time', 'marked', 'pixels'])
+        else:
+            df = pd.concat([time, pixels], axis=1, keys=['time', 'pixels'])
         # recal
         df['recalibration'] = (df.pixels.diff() == 0.0).all(axis=1)
         r = df['recalibration'].diff().cumsum() + 1
