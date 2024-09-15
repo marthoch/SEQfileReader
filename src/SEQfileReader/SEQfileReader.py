@@ -193,6 +193,22 @@ Max error between time in file and nominal time: {T_err} s
     def atmospheric_transmission(self):
         return self.im.reduce_objects.get_object_parameters().atmospheric_transmission
 
+    @property
+    def has_mark_property(self):
+        """The 'Mark' propterty is present in teh SEQ file.
+        In FLIR Thermal Studio, when recording it has been configured
+        that a change in the digital inputs marks the frame."""
+        return 'Mark' in self.im.frame_info
+
+    @property
+    def frame_is_marked(self):
+        """True if the mark property is True for the current frame
+        indication a change of the digital inputs as configured in FLIR Thermal Studio."""
+        if 'Mark' in self.im.frame_info:
+            return self.im.frame_info['Mark']['value'] == 'T'
+        else:
+            return False
+
     def go2next_frame(self, step=1):
         try:
             self.go2frame(self.current_frame_number + step)
@@ -226,17 +242,19 @@ Max error between time in file and nominal time: {T_err} s
     unit: ............... {self.im.unit.name} / {self.im.temp_type.name} 
     image size: ......... {self.im.width} x {self.im.height}
     number of frames: ... {self.number_of_frames}
-    source time:          {self.source_time.isoformat()}
+    source time: ........ {self.source_time.isoformat()}
     recording start time: {self._firstFrame_time.isoformat()}
     recording time: ..... {self.recordingTime.total_seconds()} sec
     frame rate: ......... {self.frameRate} Hz {'(forced)' if self.frameRate_forced else ''}
+    has mark property: .. {self.has_mark_property}
     current frame:
         frame number: ....... {self.current_frame_number}
         preset: ............. {self.im.preset}
-        date/time of frame:   {self.im.frame_info.time.isoformat()}
-        emissivity:               {self.emissivity}
+        date/time of frame: . {self.im.frame_info.time.isoformat()}
+        emissivity: ......... {self.emissivity}
         atmospheric_transmission: {self.atmospheric_transmission}
-        distance: ................{self.im.object_parameters.distance}
+        distance: ............... {self.im.object_parameters.distance}
+        marked: ................. {self.frame_is_marked}
         preset: ............. {self.im.preset}  {self.im.source_info.preset_info[self.im.preset].available}
             frame rate: ..... {self.im.source_info.preset_info[self.im.preset].frame_rate} Hz (valid={self.im.source_info.preset_info[self.im.preset].frame_rate_valid}) 
             calibration range: {sp.constants.convert_temperature(self.im.source_info.preset_info[self.im.preset].min_temp, 'K', 'C')} - {sp.constants.convert_temperature(self.im.source_info.preset_info[self.im.preset].max_temp, 'K', 'C')} degC
@@ -367,18 +385,24 @@ Max error between time in file and nominal time: {T_err} s
         stop_ = stop if stop is not None else self.number_of_frames
         n_frames = (stop_ - start) // step
         fi = np.empty(n_frames, dtype=np.uint32)
+
         t = np.empty(n_frames, dtype=datetime.datetime)
         self.go2frame(0)
         aline = self.read_line(line=line, hline=hline, vline=vline, interpolation=interpolation)
         v = np.empty([aline['values'].shape[0], n_frames], dtype=np.float32)
+        has_mark_atribute = 'Mark' in self.im.frame_info
+        if has_mark_atribute:
+            marki = np.empty(n_frames, dtype=np.bool_)
 
         for i, seqFrame in enumerate(self.frame_iter(start=start, stop=stop, step=step)):
             # display(i)
             fi[i] = seqFrame.current_frame_number
             t[i] = seqFrame.current_frame_time
+            if has_mark_atribute:
+                marki[i] = seqFrame.im.frame_info['Mark']['value'] == 'T'
             v[:, i] = self.read_line(line=line, hline=hline, vline=vline, interpolation=interpolation)['values']
 
-        return dict(time=t, values=v, frame_number=fi)
+        return dict(time=t, values=v, frame_number=fi, frame_marked=marki)
 
 
     def read_line_over_time_df(self, start=0, stop=None, step=1, line=None, hline=None, vline=None,
@@ -411,7 +435,8 @@ Max error between time in file and nominal time: {T_err} s
         time = pd.concat([T, T_sec, T_secN, frame_number], axis=1, keys=['timestamp', 'time_sec', 'time_secN', 'frame_number'])
 
         #log.debug(f'time {time.shape}')
-        df = pd.concat([time, pixels], axis=1, keys=['time', 'pixels'])
+        marked = pd.Series(lines_over_time['frame_marked'], name='marked')
+        df = pd.concat([time, marked, pixels], axis=1, keys=['time', 'marked', 'pixels'])
         # recal
         df['recalibration'] = (df.pixels.diff() == 0.0).all(axis=1)
         r = df['recalibration'].diff().cumsum() + 1
