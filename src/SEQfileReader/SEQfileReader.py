@@ -11,11 +11,13 @@ import pandas as pd
 from numpy import ndarray
 import matplotlib.pyplot as plt
 
-from . import helper
-
 import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+_logger = logging.getLogger(__name__)
+_logger.setLevel(logging.DEBUG)
+try:
+    import EngineeringTools.quantities as ETQ
+except Exception as e:
+    _logger.critical('EngineeringTools not found, install from https://github.com/marthoch/EngineeringTools')
 
 try:
     import fnv
@@ -27,10 +29,10 @@ except Exception as e:
 ## Installation of the fnv module:
 * Download and install the "FLIR Science File SDK" from https://flir.custhelp.com/app/account/fl_download_software.
 * Install Python module according https://flir.custhelp.com/app/answers/detail/a_id/3504/~/getting-started-with-flir-science-file-sdk-for-python  
-    Attention: Use the setup.py attached to the "Getting started with ..."  as the one in the SDK is broken.        
 """)
     raise e
 
+from . import helper
 
 class SEQfileReader:
     """SEQfileReader: High level reader for FLIR *.seq, and *.csq files (thermography recordings (IR))
@@ -72,7 +74,7 @@ SEQfile(filename=r'testRecording.seq')
     None: frame rate is estimated
     frame rate in Hz: value is forced
         """
-        log.debug('opening "%s"', filename)
+        _logger.debug('opening "%s"', filename)
         self._filename = filename
         self.im = fnv.file.ImagerFile(self._filename)
         self.im.unit = fnv.Unit.TEMPERATURE_FACTORY
@@ -115,12 +117,12 @@ SEQfile(filename=r'testRecording.seq')
         tdiff_median = tdiff.median()
         tdiff_err = np.abs(tdiff - tdiff_median).max()
         if tdiff_err / tdiff_median > 0.1:
-            log.warning(f'The time deviates up to {tdiff_err:.3} s or {tdiff_err / tdiff_median:.3} x sample time' )
+            _logger.warning(f'The time deviates up to {tdiff_err:.3} s or {tdiff_err / tdiff_median:.3} x sample time' )
         fr_ = 1/tdiff_median
         idx = (np.abs(self.frameRate_nominal_available - fr_)).argmin()
         self.frameRate = self.frameRate_nominal_available[idx]
         if np.abs(self.frameRate - fr_)/fr_ > 0.01:
-            log.warning(f'Estimated frame rate, {fr_:.3} Hz, diverges from predefined frame rate {self.frameRate:.3}')
+            _logger.warning(f'Estimated frame rate, {fr_:.3} Hz, diverges from predefined frame rate {self.frameRate:.3}')
 
 
     def analyse_framerate(self):
@@ -187,11 +189,57 @@ Max error between time in file and nominal time: {T_err} s
 
     @property
     def emissivity(self):
-        return self.im.reduce_objects.get_object_parameters().emissivity
+        try:
+            return ETQ.Scalar(self.im.reduce_objects.get_object_parameters().emissivity)
+        except NameError as e:
+            return self.im.reduce_objects.get_object_parameters().emissivity
+
+    @property
+    def reflected_temp(self):
+        try:
+            return ETQ.TemperatureAbsolute(self.im.reduce_objects.get_object_parameters().reflected_temp, 'K')
+        except NameError as e:
+            return self.im.reduce_objects.get_object_parameters().reflected_temp
+
+    @property
+    def atmosphere_temp(self):
+        try:
+            return ETQ.TemperatureAbsolute(self.im.reduce_objects.get_object_parameters().atmosphere_temp, 'K')
+        except NameError as e:
+            return self.im.reduce_objects.get_object_parameters().atmosphere_temp
+
+    @property
+    def ext_optics_temp(self):
+        try:
+            return ETQ.TemperatureAbsolute(self.im.reduce_objects.get_object_parameters().ext_optics_temp, 'K')
+        except NameError as e:
+            return self.im.reduce_objects.get_object_parameters().ext_optics_temp
+
+    @property
+    def distance(self):
+        try:
+            return ETQ.Distance(self.im.reduce_objects.get_object_parameters().distance, 'm')
+        except Exception as e:
+            return self.im.reduce_objects.get_object_parameters().distance
 
     @property
     def atmospheric_transmission(self):
-        return self.im.reduce_objects.get_object_parameters().atmospheric_transmission
+        try:
+            return ETQ.Scalar(self.im.reduce_objects.get_object_parameters().atmospheric_transmission)
+        except NameError as e:
+            return self.im.reduce_objects.get_object_parameters().atmospheric_transmission
+
+    @property
+    def relative_humidity(self):
+        try:
+            return ETQ.Scalar(self.im.reduce_objects.get_object_parameters().relative_humidity)
+        except NameError as e:
+            return self.im.reduce_objects.get_object_parameters().relative_humidity
+
+
+    @property
+    def hasNUC(self):
+        return self.im.has_nuc()
 
     @property
     def has_mark_property(self):
@@ -240,6 +288,13 @@ Max error between time in file and nominal time: {T_err} s
     lens: ............... {self.lens} / {self.lens_part_number} / SN:{self.lens_serial}
     interlaced: ......... {self.interlaced}
     unit: ............... {self.im.unit.name} / {self.im.temp_type.name} 
+      emissivity: ....... {self.emissivity}
+      reflected_temp: ... {self.reflected_temp}
+      atmosphere_temp: .. {self.atmosphere_temp}
+      atmospheric_transmission: {self.atmospheric_transmission}
+      distance: ......... {self.distance}
+      ext_optics_temp: .. {self.ext_optics_temp}
+      relative_humidity:  {self.relative_humidity}
     image size: ......... {self.im.width} x {self.im.height}
     number of frames: ... {self.number_of_frames}
     source time: ........ {self.source_time.isoformat()}
@@ -430,12 +485,12 @@ Max error between time in file and nominal time: {T_err} s
         T_secN.rename('time_secN')
         T_err = (T_sec - T_secN).abs().max()
         if (T_err > 0.000):
-            log.warning(f'time_sec - time_secN  = {T_err}')
+            _logger.warning(f'time_sec - time_secN  = {T_err}')
         pixels = pd.DataFrame(lines_over_time['values'].T)
-        #log.debug(f'pixels {pixels.shape}')
+        #_logger.debug(f'pixels {pixels.shape}')
         time = pd.concat([T, T_sec, T_secN, frame_number], axis=1, keys=['timestamp', 'time_sec', 'time_secN', 'frame_number'])
 
-        #log.debug(f'time {time.shape}')
+        #_logger.debug(f'time {time.shape}')
         if self.has_mark_property:
             marked = pd.Series(lines_over_time['frame_marked'], name='marked')
             df = pd.concat([time, marked, pixels], axis=1, keys=['time', 'marked', 'pixels'])
@@ -448,7 +503,7 @@ Max error between time in file and nominal time: {T_err} s
         r[df['recalibration']] *= -1
         df['recalibration_occassion'] = r
         if df['recalibration'].any():
-            log.warning('recording contains recalibration')
+            _logger.warning('recording contains recalibration')
         return df
 
 
@@ -514,7 +569,7 @@ class FrameIterator:
         except StopIteration:
             raise
         except Exception as e:
-            log.error(e)
+            _logger.error(e)
             raise StopIteration
 
 # eof
