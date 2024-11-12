@@ -61,7 +61,7 @@ SEQfile(filename=r'testRecording.seq')
     frameRate_nominal_available = np.concatenate([200. / 2 ** np.arange(0, 5), # A655sc
                                                   30. / 2 ** np.arange(0, 3)]) # T650sc # FIXME: ???
 
-    def __init__(self, filename, in_celsius=False, frameRate_forced=None):
+    def __init__(self, filename, in_celsius=False, frameRate_forced=None, fast_framerate_estimation=True):
         """
 
 :param filename:
@@ -100,7 +100,10 @@ SEQfile(filename=r'testRecording.seq')
         self.timeArray = None
         if frameRate_forced is None:
             self.frameRate_forced = False
-            self._estimate_framerate()
+            if fast_framerate_estimation:
+                self._estimate_framerate_fast()
+            else:
+                self._estimate_framerate()
         else:
             self.frameRate_forced = True
             self.frameRate = frameRate_forced
@@ -109,8 +112,17 @@ SEQfile(filename=r'testRecording.seq')
         # reset
         self.go2frame(0)
 
+    def _estimate_framerate_fast(self):
+        self.framerate_estimation = 'fast'
+        dt = (self._lastFrame_time - self._firstFrame_time) / (self.number_of_frames - 1)
+        fr_ = 1/dt.total_seconds()
+        idx = (np.abs(self.frameRate_nominal_available - fr_)).argmin()
+        self.frameRate = self.frameRate_nominal_available[idx]
+        if np.abs(self.frameRate - fr_)/fr_ > 0.01:
+            _logger.warning(f'Estimated frame rate, {fr_:.3f} Hz, diverges from predefined frame rate {self.frameRate:.3f}')
 
     def _estimate_framerate(self):
+        self.framerate_estimation = 'full'
         # old: fr_ = 1 / ((self._lastFrame_time - self._firstFrame_time).total_seconds() / (self.im.num_frames - 1))
         timedf = self.read_time_df()
         tdiff = timedf.timestamp.diff().dt.total_seconds()
@@ -450,12 +462,15 @@ Max error between time in file and nominal time: {T_err} s
             marki = np.empty(n_frames, dtype=np.bool_)
 
         for i, seqFrame in enumerate(self.frame_iter(start=start, stop=stop, step=step)):
-            # display(i)
+            if i % 1000 == 0:
+                _logger.debug(f'reading {i}th frame')
             fi[i] = seqFrame.current_frame_number
             t[i] = seqFrame.current_frame_time
             if has_mark_atribute:
                 marki[i] = seqFrame.im.frame_info['Mark']['value'] == 'T'
             v[:, i] = self.read_line(line=line, hline=hline, vline=vline, interpolation=interpolation)['values']
+        if self.timeArray is None:
+            self.timeArray = pd.DataFrame(dict(frame_number=fi, timestamp=t))
         ret = dict(time=t, values=v, frame_number=fi)
         if has_mark_atribute:
             ret['frame_marked'] = marki
